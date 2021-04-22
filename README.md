@@ -119,6 +119,8 @@ The method call may fail if the user denies the permission request.
 | ------------- | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **`maxSize`** | <code>number</code> | The maximum length of one side of the photo. The photo is scaled according to the aspect ratio. The value <code>0</code> leaves the photo in its original resolution. The photo is never scaled up. |
 | **`quality`** | <code>number</code> | The image quality on a scale from 10 (highest compression) to 100 (best quality).                                                                                                                   |
+| **`multiple`** | <code>boolean</code> | Whether to allow multiple files to be selected. Default is `true`.                                                                                                                   |
+| **`acceptType`** | <code>string</code> | The mime type of the files to be picked. Currently only supports one at a time. Default is `image/*`.                                                                                                                  |
 
 ### PhotopickerResponse
 
