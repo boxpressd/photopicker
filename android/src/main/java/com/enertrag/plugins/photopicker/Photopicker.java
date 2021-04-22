@@ -19,12 +19,14 @@
 package com.enertrag.plugins.photopicker;
 
 import android.Manifest;
+import android.content.ContentResolver;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.net.Uri;
 import android.util.Log;
+import android.webkit.MimeTypeMap;
 
 import com.getcapacitor.FileUtils;
 import com.getcapacitor.JSArray;
@@ -159,10 +161,16 @@ public class Photopicker extends Plugin {
 
         saveCall(call);
 
-        Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
-        intent.setType("image/*");
-        // This is the magic "extra" for selecting more than one photo
-        intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+        Intent intent = new Intent(Intent.ACTION_PICK);
+        if (call.getString("acceptType") != null) {
+            intent.setType(call.getString("acceptType"));
+        } else {
+            intent.setType("image/*");
+        }
+        if (call.getBoolean("multiple") != null && call.getBoolean("multiple")) {
+            // This is the magic "extra" for selecting more than one photo
+            intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+        }
 
         startActivityForResult(call, intent, REQUEST_IMAGE_PICK);
     }
@@ -286,24 +294,33 @@ public class Photopicker extends Plugin {
 
         try {
             imageStream = getContext().getContentResolver().openInputStream(uri);
-            Bitmap bitmap = BitmapFactory.decodeStream(imageStream);
 
-            if (bitmap == null) {
+            ContentResolver cR = getContext().getContentResolver();
+            MimeTypeMap mime = MimeTypeMap.getSingleton();
+            String type = cR.getType(uri);
+            String extension = mime.getExtensionFromMimeType(type);
 
-                Log.e(LOG_TAG, "bitmap could not be decoded from stream");
-                return null;
+            if (type.contains("image")) {
+                Bitmap bitmap = BitmapFactory.decodeStream(imageStream);
+
+                if (bitmap == null) {
+
+                    Log.e(LOG_TAG, "bitmap could not be decoded from stream");
+                    return null;
+                }
+
+                if (options.getMaxSize() > 0) {
+                    bitmap = resizeBitmapPreservingAspectRatio(bitmap, options.getMaxSize());
+                }
+
+                // Compress the final image and prepare for output to client
+                ByteArrayOutputStream bitmapOutputStream = new ByteArrayOutputStream();
+                bitmap.compress(Bitmap.CompressFormat.JPEG, options.getQuality(), bitmapOutputStream);
+
+                return getTempImage(bitmapOutputStream);
+            } else {
+                return getTempFile(imageStream, extension);
             }
-
-            if(options.getMaxSize() > 0) {
-                bitmap = resizeBitmapPreservingAspectRatio(bitmap, options.getMaxSize());
-            }
-
-            // Compress the final image and prepare for output to client
-            ByteArrayOutputStream bitmapOutputStream = new ByteArrayOutputStream();
-            bitmap.compress(Bitmap.CompressFormat.JPEG, options.getQuality(), bitmapOutputStream);
-
-            return getTempImage(bitmapOutputStream);
-
         } catch (FileNotFoundException e) {
             Log.e(LOG_TAG, "file not found", e);
         } finally {
@@ -397,11 +414,48 @@ public class Photopicker extends Plugin {
         }
 
         Log.i(LOG_TAG, "resizing bitmap from " + width + "x" + height + " to " + Math.round(newWidth)
-        + "x" + Math.round(newHeight));
+                + "x" + Math.round(newHeight));
 
         return Bitmap.createScaledBitmap(bitmap, Math.round(newWidth), Math.round(newHeight), false);
     }
 
+    private Uri getTempFile(InputStream inputStream, String extension) {
+        try {
+            String filename = "py_temp_" + UUID.randomUUID().toString() + "." + extension;
+            Log.d(LOG_TAG, "Filaname:");
+            Log.d(LOG_TAG, filename);
 
+            File cacheDir = getContext().getCacheDir();
+            File outFile = new File(cacheDir, filename);
+            FileOutputStream fos = new FileOutputStream(outFile);
+            int read = 0;
+            int maxBufferSize = 1024 * 1024;
+            int bufferSize = Math.min(inputStream.available(), maxBufferSize);
+            final byte[] buffers = new byte[bufferSize];
+            while ((read = inputStream.read(buffers)) != -1) {
+                fos.write(buffers, 0, read);
+            }
+            fos.close();
+
+            return Uri.fromFile(outFile);
+
+        } catch (IOException ex) {
+
+            // Something went terribly wrong
+            Log.e(LOG_TAG, "error writing temp file", ex);
+
+
+        } finally {
+            if (inputStream != null) {
+                try {
+                    inputStream.close();
+                } catch (IOException e) {
+                    Log.e(LOG_TAG, "inputStream could not be closed", e);
+                }
+            }
+        }
+
+        return null;
+    }
 
 }
