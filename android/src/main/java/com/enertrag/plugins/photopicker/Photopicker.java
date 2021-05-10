@@ -24,7 +24,10 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Matrix;
+import android.media.ExifInterface;
 import android.net.Uri;
+import android.os.Build;
 import android.util.Log;
 import android.webkit.MimeTypeMap;
 
@@ -280,6 +283,31 @@ public class Photopicker extends Plugin {
         }
     }
 
+    private Bitmap rotatedImage(Bitmap bitmap, Uri uri) throws IOException {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            int rotate = 0;
+            InputStream stream = getContext().getContentResolver().openInputStream(uri);
+            ExifInterface exif = new ExifInterface(stream);
+            int orientation = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION,
+                    ExifInterface.ORIENTATION_NORMAL);
+            switch (orientation) {
+                case ExifInterface.ORIENTATION_ROTATE_270:
+                    rotate = 270;
+                    break;
+                case ExifInterface.ORIENTATION_ROTATE_180:
+                    rotate = 180;
+                    break;
+                case ExifInterface.ORIENTATION_ROTATE_90:
+                    rotate = 90;
+                    break;
+            }
+            Matrix matrix = new Matrix();
+            matrix.postRotate(rotate);
+            return Bitmap.createBitmap(bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), matrix, true);
+        }
+        return bitmap;
+    }
+
     /**
      * Creates a temporary jepg image from the selected native mediapicker image uri.
      *
@@ -304,13 +332,18 @@ public class Photopicker extends Plugin {
                 Bitmap bitmap = BitmapFactory.decodeStream(imageStream);
 
                 if (bitmap == null) {
-
                     Log.e(LOG_TAG, "bitmap could not be decoded from stream");
                     return null;
                 }
 
                 if (options.getMaxSize() > 0) {
                     bitmap = resizeBitmapPreservingAspectRatio(bitmap, options.getMaxSize());
+                }
+
+                try {
+                    bitmap = rotatedImage(bitmap, uri);
+                } catch (IOException e) {
+                    e.printStackTrace();
                 }
 
                 // Compress the final image and prepare for output to client
@@ -438,13 +471,9 @@ public class Photopicker extends Plugin {
             fos.close();
 
             return Uri.fromFile(outFile);
-
         } catch (IOException ex) {
-
             // Something went terribly wrong
             Log.e(LOG_TAG, "error writing temp file", ex);
-
-
         } finally {
             if (inputStream != null) {
                 try {
